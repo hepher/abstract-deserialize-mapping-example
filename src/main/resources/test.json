@@ -1,0 +1,55 @@
+{
+  "testid": "id",
+  "testname": "name",
+  "innerTest": {
+    "innerId": "innerTest.id",
+    "innerName": "innerTest.name",
+    "innertest": {
+      "innId": "innerTest2.id",
+      "innName": "innerTest2.name"
+    }
+  },
+  "prova": "innerTest2.inner.id",
+  "provaprova": "innerTest2.inner.name",
+  "toInnerTest": "innerTest.myBoolean",
+  "testNumber": "littleNumber",
+  "doubleNumber": "doubleNumber",
+  "floatTest": "littleFloat",
+  "uuid": "uuid",
+  "date": "date",
+  "longDate": "longDate",
+  "testLocalDate": "localDate",
+  "testLocalDateTime": "localDateTime",
+  "testZonedDateTime": "zonedDateTime",
+  "vet1": "vetInteger",
+  "vet2": "arrayContainer.vetString",
+  "vet3": {
+    "property": "arrayContainer.arrayObjects",
+    "mapping": {
+      "id": "objectId",
+      "inn": {
+        "name": "objectName"
+      }
+    }
+  },
+  "list1": "listInteger",
+  "list2": {
+    "property": "arrayContainer.listObject",
+    "mapping": {
+      "id": "objectId",
+      "inn": {
+        "name": "objectName"
+      }
+    }
+  },
+  "set1": {
+    "property": "setArrayObject",
+    "mapping": {
+      "id": "objectId",
+      "inn": {
+        "name": "objectName"
+      }
+    }
+  },
+  "set2": "setInteger"
+}
