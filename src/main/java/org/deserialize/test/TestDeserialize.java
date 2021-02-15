@@ -1,6 +1,6 @@
 package org.deserialize.test;
 
-import org.deserialize.abstractdeserialize.AbstractDeserializeMapping;
+import com.deserialize.mapping.main.AbstractDeserializeMapping;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
