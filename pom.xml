@@ -25,12 +25,6 @@
 		</dependency>
 
 		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-
-		<dependency>
 			<groupId>com.abstract.deserialize.mapping</groupId>
 			<artifactId>deserialize</artifactId>
 			<version>1.0.0-SNAPSHOT</version>
