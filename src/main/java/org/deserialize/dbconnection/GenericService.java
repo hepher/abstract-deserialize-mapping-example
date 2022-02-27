@@ -7,7 +7,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 @Service
-public class GenericService extends AbstractService<SimpleEntity, Integer, GenericDAO, SimpleEntityDAO> {
+//public class GenericService extends AbstractService<SimpleEntity, Integer, GenericDAO, SimpleEntityDAO> {
+public class GenericService extends AbstractService<SimpleEntity, Integer, GenericDAO> {
 
     @Transactional(readOnly = true)
     public List<SimpleEntity> findAllSessionFactoryFromJPA() {
@@ -26,11 +27,11 @@ public class GenericService extends AbstractService<SimpleEntity, Integer, Gener
 
     @Transactional
     public void updateAccount() {
-        SimpleEntity entity = new SimpleEntity();
-        entity.setId(1);
-        entity.setName("admin 2");
-        entity.setOwner("EADMIN");
-        jpaDao.save(entity);
+//        SimpleEntity entity = new SimpleEntity();
+//        entity.setId(1);
+//        entity.setName("admin 2");
+//        entity.setOwner("EADMIN");
+//        jpaDao.save(entity);
 
         dao.updateAccount();
 
@@ -38,6 +39,7 @@ public class GenericService extends AbstractService<SimpleEntity, Integer, Gener
     }
 
     public List<SimpleEntity> findAllJpaSimpleDTO() {
-        return jpaDao.findAll();
+//        return jpaDao.findAll();
+        return null;
     }
 }

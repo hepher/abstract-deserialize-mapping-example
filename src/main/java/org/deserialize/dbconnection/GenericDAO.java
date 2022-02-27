@@ -27,7 +27,7 @@ public class GenericDAO extends AbstractDAO {
         }
 //        NativeQuery<?> query = entityManagerFactory.unwrap(SessionFactory.class).getCurrentSession().createSQLQuery(querySQL);
         // exist session factory but not exist opened session
-        NativeQuery<?> query = entityManagerFactory.unwrap(SessionFactory.class).openSession().createSQLQuery(querySQL);
+        NativeQuery<?> query = entityManagerFactory.unwrap(SessionFactory.class).getCurrentSession().createSQLQuery(querySQL);
         query.setResultTransformer(Transformers.ALIAS_TO_ENTITY_MAP);
 
         List<SimpleEntity> result = new ArrayList<>();
