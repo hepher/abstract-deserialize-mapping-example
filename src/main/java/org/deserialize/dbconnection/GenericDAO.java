@@ -1,12 +1,12 @@
 package org.deserialize.dbconnection;
 
+import jakarta.persistence.Query;
 import org.deserialize.main.AbstractDAO;
 import org.hibernate.SessionFactory;
 import org.hibernate.query.NativeQuery;
 import org.hibernate.transform.Transformers;
 import org.springframework.stereotype.Repository;
 
-import javax.persistence.Query;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -96,8 +96,8 @@ public class GenericDAO extends AbstractDAO {
     }
 
     public void updateAccount() {
-//        Query query = entityManager.createNativeQuery("update account set nome_account = :nome where id = :id");
-        NativeQuery<?> query = sessionFactory.getCurrentSession().createSQLQuery("update account set nome_account = :nome where id = :id");
+        Query query = entityManager.createNativeQuery("update account set nome_account = :nome where id = :id");
+//        NativeQuery<?> query = sessionFactory.getCurrentSession().createSQLQuery("update account set nome_account = :nome where id = :id");
         query.setParameter("nome", "pluto");
         query.setParameter("id", 1);
 

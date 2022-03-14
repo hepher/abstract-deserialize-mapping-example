@@ -2,7 +2,6 @@ package org.deserialize.test;
 
 import org.deserialize.dbconnection.GenericService;
 import org.deserialize.dbconnection.SimpleEntity;
-import org.deserialize.dbconnection.SimpleEntityService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
