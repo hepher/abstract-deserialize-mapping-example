@@ -1,6 +1,6 @@
 package org.deserialize.dbconnection;
 
-import jakarta.persistence.Query;
+import javax.persistence.Query;
 import org.deserialize.main.AbstractDAO;
 import org.hibernate.SessionFactory;
 import org.hibernate.query.NativeQuery;

@@ -29,5 +29,6 @@ build/
 
 ### VS Code ###
 .vscode/
-
+src/main/java/oracle
+src/main/.DS_Store
 .mvn
