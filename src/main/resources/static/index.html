@@ -1,0 +1,31 @@
+<html lang="en">
+    <head>
+        <script src="measureunitconverterutils.js"></script>
+        <title>Converter</title>
+        <script>
+            console.log(System.values());
+            console.log(Category.values());
+            console.log(System.valueOf("IS"));
+            console.log(Category.valueOf("MASS"));
+            console.log(MeasureUnitConverterUtils.UnitType.values());
+            console.log(MeasureUnitConverterUtils.UnitType.valueOf("g","IS"));
+            console.log(MeasureUnitConverterUtils.UnitType.getBasicUnit(Category.MASS, System.IS));
+            console.log(MeasureUnitConverterUtils.UnitType.getBasicUnit(Category.MASS, System.BIS));
+            console.log("Conversion ....");
+            console.log(MeasureUnitConverterUtils.convert(12.0, "kg", "IS", "g", "IS"));
+            console.log(MeasureUnitConverterUtils.convert(0.1, "kg", "IS", "g", "IS"));
+            console.log(MeasureUnitConverterUtils.convert(12.0, "g", "IS", "kg", "IS"));
+            console.log();
+            console.log(MeasureUnitConverterUtils.convert(12.0, "oz", "BIS", "lb", "BIS"));
+            console.log(MeasureUnitConverterUtils.convert(12.0, "lb", "BIS", "oz", "BIS"));
+            console.log();
+            console.log(MeasureUnitConverterUtils.convert(15.0, "kg", "IS", "lb", "BIS"));
+            console.log(MeasureUnitConverterUtils.convert(15.0, "kg", "IS", "oz", "BIS"));
+            console.log(MeasureUnitConverterUtils.convert(15.0, "lb", "BIS", "kg", "IS"));
+            console.log(MeasureUnitConverterUtils.convert(15.0, "oz", "BIS", "kg", "IS"));
+        </script>
+    </head>
+    <body>
+        <label>hola conversione</label>
+    </body>
+</html>
