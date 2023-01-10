@@ -1,8 +1,21 @@
 package org.deserialize.main.jpa;
 
-public abstract class AbstractService<E, I, R extends JpaRepository<E, I>>  {
-  
-  @PersistenceContext
+import org.springframework.data.domain.Example;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.transaction.annotation.Transactional;
+
+import javax.annotation.PostConstruct;
+import javax.persistence.EntityManager;
+import javax.persistence.PersistenceContext;
+import javax.persistence.criteria.*;
+import java.lang.reflect.ParameterizedType;
+import java.util.*;
+import java.util.function.BiFunction;
+import java.util.stream.Collectors;
+
+public abstract class AbstractService<E, I, R extends JpaRepository<E, I>> {
+
+    @PersistenceContext
     protected EntityManager entityManager;
 
     private Class<E> klass;
@@ -23,7 +36,7 @@ public abstract class AbstractService<E, I, R extends JpaRepository<E, I>>  {
 
     @PostConstruct
     public void initialize() {
-        klass = (Class<E>) ((ParameterizedType)getClass().getGenericSuperclass()).getActualTypeArguments()[0];
+        klass = (Class<E>) ((ParameterizedType) getClass().getGenericSuperclass()).getActualTypeArguments()[0];
         this.criteriaBuilder = entityManager.getCriteriaBuilder();
     }
 
