@@ -1,6 +1,9 @@
 <html lang="en">
     <head>
         <script src="measureunitconverterutils.js"></script>
+        <script src="./sockjs.min.js"></script>
+        <script src="./stomp.js"></script>
+        <script src="./jquery.js"></script>
         <title>Converter & Push Notification</title>
         <script>
             console.log(System.values());
@@ -23,9 +26,154 @@
             console.log(MeasureUnitConverterUtils.convert(15.0, "kg", "IS", "oz", "BIS"));
             console.log(MeasureUnitConverterUtils.convert(15.0, "lb", "BIS", "kg", "IS"));
             console.log(MeasureUnitConverterUtils.convert(15.0, "oz", "BIS", "kg", "IS"));
+            
+            $(document).ready(function() {
+            let url = "http://localhost:8080/notification-manager/";
+            let isSubscribed = false;
+            let isConnected = false;
+
+            let subscribe = function(sc) {
+                sc.subscribe('/topic/pushmessages', notificationCallback);
+                if (getWAU() != null && getWAU().length !== 0) {
+                    sc.subscribe('/topic/name/' + $("#wau").val(), notificationCallback);
+                } else {
+                    sc.subscribe('/topic/name/*', notificationCallback);
+                }
+
+                isSubscribed = true;
+            }
+
+            let connectAndSubscribe = function() {
+                let st = Stomp.over(new SockJS(url + "notificationbroker"));
+                // stomp connection
+                st.connect({
+                    // headers
+                }, function (frame) {
+                    // success callback
+                    if (isSubscribed) {
+                        subscribe(st);
+                    }
+                }, function(frame) {
+                    // error callback
+                    if (isConnected) {
+                        disconnect(stompClient);
+                    }
+                    setTimeout(connectAndSubscribe, 10000);
+                    console.log("STOMP reconnecting ... !!");
+                });
+
+                return st;
+            }
+
+            let disconnect = function(sc) {
+                sc.unsubscribe('/topic/pushmessages');
+                if (getWAU() != null && getWAU().length !== 0) {
+                    sc.unsubscribe('/topic/name/' + $("#wau").val());
+                } else {
+                    sc.unsubscribe('/topic/name/*');
+                }
+
+                sc.disconnect();
+
+                isConnected = false;
+            }
+
+            let notificationCallback = function(notification) {
+                let res = JSON.parse(notification.body)
+                console.log(res);
+                if (getWAU() === res.sender) {
+                    return null;
+                }
+
+                if (res.original.startsWith("http://") || res.original.startsWith("https://")) {
+                    window.open(res.original);
+                } else {
+                    $("#res-message").val(res.message);
+                }
+            }
+
+            let getWAU = function() {
+                return $("#wau").val();
+            }
+
+            // stompClient.reconnect_delay = 1000; // not work
+            var stompClient = connectAndSubscribe();
+
+            // subscription
+            $("#submit-wau").on("click", function() {
+                subscribe(stompClient);
+            });
+
+            $("#submit-named").on("click", function() {
+                $.post(url + "send/subscribed/message", {
+                    message: $("#message").val(),
+                    name: getWAU()
+                }, function(response) {
+                    console.log(response);
+                }, "json");
+            })
+
+            $("#submit-pluto").on("click", function() {
+                $.post(url + "send/message/pluto", {
+                    message: $("#message").val(),
+                    name: getWAU()
+                }, function(response) {
+                    console.log(response);
+                }, "json");
+            })
+
+            // buttons to send notification
+            $("#submit").on("click", function () {
+                $.post(url + "send/message", {
+                    message: $("#message").val(),
+                    name: getWAU()
+                }, function(response) {
+                    console.log(response);
+                }, "json");
+            });
+
+            $("#submit-html").on("click", function () {
+                let htmlMessage = "<br><p>Questa è la lista della spesa</p>" +
+                    "<ul>" +
+                        "<li>Pane</li>" +
+                        "<li>Latte</li>" +
+                        "<li>2kg lievito di birra</li>" +
+                    "</ul>";
+
+                $.post(url + "send/message", {
+                    message: htmlMessage,
+                    name: getWAU()
+                }, function(response) {
+                    console.log(response);
+                }, "json");
+            });
+
+            $("#submit-link").on("click", function () {
+                $.post(url + "send/message", {
+                    message: "https://www.repubblica.it",
+                    name: getWAU()
+                }, function(response) {
+                    console.log(response);
+                }, "json");
+            });
+        })
         </script>
     </head>
     <body>
+        <label for="wau">Who are u ?</label>
+        <input type="text" id="wau" name="wau"><br><br>
+        <input type="submit" value="Subscribe name" id="submit-wau">
+        <input type="submit" value="Send to subscribed" id="submit-named">
+        <input type="submit" value="Send to pluto" id="submit-pluto">
 
+        <br><br><br>
+        <label for="message">Message</label>
+        <input type="text" id="message" name="message"><br><br>
+        <input type="submit" value="Submit" id="submit">
+        <input type="submit" value="Submit HTML" id="submit-html">
+        <input type="submit" value="Submit Link" id="submit-link">
+        <br><br>
+        <label for="res-message">Response message</label>
+        <textarea id="res-message" name="res-message"></textarea>
     </body>
 </html>
