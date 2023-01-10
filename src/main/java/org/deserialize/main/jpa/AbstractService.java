@@ -1,5 +1,6 @@
 package org.deserialize.main.jpa;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Example;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,9 +19,11 @@ public abstract class AbstractService<E, I, R extends JpaRepository<E, I>> {
     @PersistenceContext
     protected EntityManager entityManager;
 
+    @Autowired
+    protected R repository;
+
     private Class<E> klass;
     private CriteriaBuilder criteriaBuilder;
-    protected final R repository;
 
     private final static BiFunction<Root<?>, String, Path<Object>> computePathFunction = (entity, property) -> {
         Path<Object> path = null;
@@ -30,9 +33,9 @@ public abstract class AbstractService<E, I, R extends JpaRepository<E, I>> {
         return path;
     };
 
-    protected AbstractService(R repository) {
-        this.repository = repository;
-    }
+//    protected AbstractService(R repository) {
+//        this.repository = repository;
+//    }
 
     @PostConstruct
     public void initialize() {
