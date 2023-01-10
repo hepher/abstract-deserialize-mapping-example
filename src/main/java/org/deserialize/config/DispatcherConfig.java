@@ -11,8 +11,7 @@ import org.springframework.web.servlet.view.JstlView;
 
 @Configuration
 //@EnableWebMvc
-public class DispatcherConfig
-        implements WebMvcConfigurer
+public class DispatcherConfig implements WebMvcConfigurer
 {
     @Override
     public void addViewControllers(ViewControllerRegistry registry) {
