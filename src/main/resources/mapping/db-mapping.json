@@ -1,0 +1,50 @@
+{
+    "obj2.proinn": "obj1",
+    "objX.prop3": "obj2.prop1",
+    "objx.prop2": "obj2.prop2",
+    "objy.pro4": "obj2.prop5",
+    "objy.obj5": {
+        "excludeProperties":["eprop2", "eprop3"],
+        "mappedProperty": "obj3"
+    },
+    "propRequired": {
+        "required": true,
+        "mappedProperty":"prop"
+    },
+    "propNotRequiredWithDefault": {
+        "defaultValue": "xxxx",
+        "mappedProperty": "prop4"
+    },
+    "vetProperty": {
+        "mappedProperty": "vetContainer.vetPrim", 
+        "mapping": {
+            
+        },
+        "indexMapping": {
+            "0": {
+
+            }
+        },
+        "excludeIndexes": [0,4,9]
+    },
+    "vetWithObject": {
+        "mappedProperty": "vetContainer.vetObject",
+        "indexMapping": {
+            "0": {
+                "customObj.prop":"vetProp",
+                "customObj.secondoProp": {
+                    "mappedProperty":"useless",
+                    "defaultValue": "customDefaultValue"
+                }
+            }
+        },
+        "mapping": {
+            "customObj.prop": "vetObj.vetObjProp1",
+            "customObj.secondoProp": "vetObj.vetObjProp2"
+        }
+    },
+    "transaction-id": {
+        "mappedProperty":"exw-transaction-id",
+        "position": "header"
+    }
+}
