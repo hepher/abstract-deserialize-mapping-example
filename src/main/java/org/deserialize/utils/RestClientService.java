@@ -37,8 +37,8 @@ public class RestClientService {
     private MultiValueMap<String, String> headers;
     private Object requestBody;
     private Class<?> resultClass;
-    private Map<HttpStatus, HttpStatusErrorFunction> errorResponseConsumers;
-    private BiConsumer<BfwException, String> parseErrorBodyResponse;
+    private Map<HttpStatus, HttpStatusErrorFunction> httpStatusErrorConsumers;
+    private BiFunction<BfwException, String, BfwException> parseErrorResponseException;
 
     private final BiFunction<String, Map<String, Object>, String> encodeUrlParameterVariableFunction = (url, urlParameterMap) -> {
         StringBuilder builder = new StringBuilder(url);
@@ -129,17 +129,17 @@ public class RestClientService {
         return this;
     }
 
-    public RestClientService errorResponseConsumer(HttpStatus httpStatus, HttpStatusErrorFunction httpStatusErrorFunction) {
-        if (errorResponseConsumers == null) {
-            errorResponseConsumers = new HashMap<>();
+    public RestClientService httpStatusErrorConsumer(HttpStatus httpStatus, HttpStatusErrorFunction httpStatusErrorFunction) {
+        if (httpStatusErrorConsumers == null) {
+            httpStatusErrorConsumers = new HashMap<>();
         }
 
-        errorResponseConsumers.put(httpStatus, httpStatusErrorFunction);
+        httpStatusErrorConsumers.put(httpStatus, httpStatusErrorFunction);
         return this;
     }
 
-    public RestClientService parseErrorBodyResponse(BiConsumer<BfwException, String> parseErrorBodyResponse) {
-        this.parseErrorBodyResponse = parseErrorBodyResponse;
+    public RestClientService parseErrorResponseException(BiFunction<BfwException, String, BfwException> parseErrorResponseException) {
+        this.parseErrorResponseException = parseErrorResponseException;
         return this;
     }
 
@@ -198,7 +198,7 @@ public class RestClientService {
 
             if (response.getStatusCode().isError()) {
                 HttpStatusErrorFunction httpStatusErrorFunction;
-                if (errorResponseConsumers != null && (httpStatusErrorFunction = errorResponseConsumers.get(HttpStatus.valueOf(response.getStatusCode().value()))) != null) {
+                if (httpStatusErrorConsumers != null && (httpStatusErrorFunction = httpStatusErrorConsumers.get(HttpStatus.valueOf(response.getStatusCode().value()))) != null) {
                     if (Boolean.FALSE.equals(httpStatusErrorFunction.retryDone) && httpStatusErrorFunction.getErrorResponseFunction().apply(this, result)) {
                         httpStatusErrorFunction.retryDone = true;
                         return exchange();
@@ -210,8 +210,8 @@ public class RestClientService {
                 bfwException.setTransactionId(MDC.get(LabelUtils.TRANSACTION_ID));
                 bfwException.setSystemErrorResponse(mapper.readValue(result, Object.class));
 
-                if (parseErrorBodyResponse != null) {
-                    parseErrorBodyResponse.accept(bfwException, result);
+                if (parseErrorResponseException != null) {
+                    throw parseErrorResponseException.apply(bfwException, result);
                 }
 
                 throw bfwException;
