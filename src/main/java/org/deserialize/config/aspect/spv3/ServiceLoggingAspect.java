@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 @ConditionalOnExpression("${aspect.service.enabled:true}")
 public class ServiceLoggingAspect extends AbstractLoggingAspect {
 
-    @Pointcut("within(@org.springframework.stereotype.Service *)")
+    @Pointcut("execution(* com.enelx..service..*.*(..))")
     public void trackingServiceExecution() {}
 
     @Around("trackingServiceExecution() && trackingPackagePointcut()")
