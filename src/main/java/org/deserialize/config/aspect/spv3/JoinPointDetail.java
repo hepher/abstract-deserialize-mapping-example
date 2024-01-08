@@ -8,12 +8,14 @@ import org.apache.commons.lang3.math.NumberUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.slf4j.MDC;
+import org.springframework.web.bind.annotation.RequestBody;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Array;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 
 @Getter
 public class JoinPointDetail {
@@ -21,14 +23,18 @@ public class JoinPointDetail {
     private String transactionId;
     private final Object[] args;
     private final String method;
-    private String klass;
+    private String methodKlass;
+    private final String executionKlass;
+    private String parentKlass;
+    private String parentMethod;
     private final String[] parameterNames;
     private final MethodSignature methodSignature;
     private final Map<String, Parameter> parameterMap;
+    private Object body;
 
     record Parameter(Class<?> klass, Object value){}
 
-    public JoinPointDetail(ProceedingJoinPoint joinPoint) {
+    public JoinPointDetail(ProceedingJoinPoint joinPoint, String transactionId) {
         BiFunction<MethodSignature, Integer, Boolean> checkTransactionAnnotationFunction = (methodSignature, i) -> {
             if (i < methodSignature.getMethod().getParameterAnnotations().length) {
                 for (Annotation annotation : methodSignature.getMethod().getParameterAnnotations()[i]) {
@@ -41,14 +47,51 @@ public class JoinPointDetail {
             return false;
         };
 
+        BiFunction<MethodSignature, Integer, Boolean> checkRequestBodyAnnotationFunction = (methodSignature, i) -> {
+            if (i < methodSignature.getMethod().getParameterAnnotations().length) {
+                for (Annotation annotation : methodSignature.getMethod().getParameterAnnotations()[i]) {
+                    if (annotation.annotationType().equals(RequestBody.class)) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        };
+
+        Function<String, String> extractClassFromPackageFunction = (pack -> {
+            if (pack == null) {
+                return null;
+            }
+
+            try {
+                String[] splitPackage = pack.split("\\.");
+                return splitPackage[splitPackage.length - 1];
+            } catch (Exception e) {
+                return null;
+            }
+        });
+
         method = joinPoint.getSignature().getName();
         args = joinPoint.getArgs();
 
-        try {
-            String[] splitPackage = joinPoint.getSignature().getDeclaringTypeName().split("\\.");
-            klass = splitPackage[splitPackage.length - 1];
-        } catch (Exception e) {
-            klass = joinPoint.getTarget().getClass().getSimpleName();
+        executionKlass = joinPoint.getTarget().getClass().getSimpleName();
+        methodKlass = extractClassFromPackageFunction.apply(joinPoint.getSignature().getDeclaringTypeName());
+        if (methodKlass == null) {
+            methodKlass = joinPoint.getTarget().getClass().getSimpleName();
+        }
+
+        List<StackTraceElement> filteredStack = Arrays.stream(Thread.currentThread().getStackTrace())
+            .filter(stackTraceElement ->
+                stackTraceElement.getClassName().contains(joinPoint.getTarget().getClass().getPackageName()) &&
+                stackTraceElement.getFileName() != null &&
+                !stackTraceElement.getFileName().equals("<generated>")) // ignore cglib spring proxy
+            .toList();
+
+        if (!filteredStack.isEmpty()) {
+            StackTraceElement traceElement = filteredStack.get(0);
+            parentKlass = extractClassFromPackageFunction.apply(traceElement.getClassName());
+            parentMethod = traceElement.getMethodName();
         }
 
         methodSignature = (MethodSignature) joinPoint.getSignature();
@@ -60,7 +103,11 @@ public class JoinPointDetail {
             int index = integer.getAndIncrement();
 
             if (checkTransactionAnnotationFunction.apply(methodSignature, index)) {
-                transactionId = param.toString();
+                this.transactionId = param.toString();
+            }
+
+            if (checkRequestBodyAnnotationFunction.apply(methodSignature, index)) {
+                this.body = param;
             }
 
             // avoid IndexOutOfBoundsException
@@ -72,8 +119,12 @@ public class JoinPointDetail {
             }
         }, HashMap::putAll);
 
-        if (transactionId == null) {
-            transactionId = StringUtils.defaultIfBlank(MDC.get(LabelUtils.TRANSACTION_ID), UUID.randomUUID().toString());
+        if (this.transactionId == null) {
+            this.transactionId = transactionId;
+        }
+
+        if (this.transactionId == null) {
+            this.transactionId = StringUtils.defaultIfBlank(MDC.get(LabelUtils.TRANSACTION_ID), UUID.randomUUID().toString());
         }
     }
 
