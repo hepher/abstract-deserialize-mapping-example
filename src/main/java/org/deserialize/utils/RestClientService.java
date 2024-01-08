@@ -4,24 +4,39 @@ import com.enelx.bfw.framework.exception.BfwException;
 import com.enelx.bfw.framework.util.LabelUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.catalina.util.ParameterMap;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactory;
+import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
+import org.apache.hc.client5.http.ssl.TrustAllStrategy;
+import org.apache.hc.core5.ssl.SSLContexts;
 import org.slf4j.MDC;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.util.StopWatch;
 import org.springframework.web.client.RestClient;
 
+import javax.net.ssl.SSLContext;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyManagementException;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.CertificateExpiredException;
+import java.security.cert.CertificateNotYetValidException;
 import java.util.*;
-import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 
@@ -29,16 +44,31 @@ import java.util.stream.Collectors;
 public class RestClientService {
 
     private final ObjectMapper mapper = new ObjectMapper();
+    private static final String AUTH_PREFIX_BASIC = "Basic ";
+    private static final String AUTH_PREFIX_BEARER = "Bearer ";
+    private static final String HEADER_KEY_AUTH = "Authorization";
+    private static final int MAX_BODY_SIZE = 4096;
+    private static final String OMISSIS = "{...}";
 
+    // request composition fields
     private String url;
     private HttpMethod method;
     private Map<String, Object> queryParameters;
     private Map<String, String> pathParameters;
     private MultiValueMap<String, String> headers;
+    private HttpAuthenticationHeader authenticationHeader;
     private Object requestBody;
     private Class<?> resultClass;
+
+    // request error handler
     private Map<HttpStatus, HttpStatusErrorFunction> httpStatusErrorConsumers;
     private BiFunction<BfwException, String, BfwException> parseErrorResponseException;
+
+    // request config
+    private Integer connectionTimeout = 55*1000;
+    private Integer requestTimeout = 55*1000;
+    private List<String> sslHostnameVerifierList;
+    private RequestFactoryStrategy requestFactoryStrategy;
 
     private final BiFunction<String, Map<String, Object>, String> encodeUrlParameterVariableFunction = (url, urlParameterMap) -> {
         StringBuilder builder = new StringBuilder(url);
@@ -48,7 +78,9 @@ public class RestClientService {
         return builder.toString();
     };
 
-    private RestClientService() {}
+    private RestClientService() {
+        requestFactoryStrategy = RequestFactoryStrategyEnum.HANDSHAKE_CERT_VALIDATION;
+    }
 
     public static RestClientService instance() {
         return new RestClientService();
@@ -119,6 +151,26 @@ public class RestClientService {
         return this;
     }
 
+    public RestClientService basicAuth(String user, String password) {
+        this.authenticationHeader = new HttpAuthenticationHeader(HEADER_KEY_AUTH, AUTH_PREFIX_BASIC + new String(Base64.getEncoder().encode((user + ":" + password).getBytes(StandardCharsets.UTF_8))));
+        return this;
+    }
+
+    public RestClientService bearerAuth(String bearerToken) {
+        this.authenticationHeader = new HttpAuthenticationHeader(HEADER_KEY_AUTH, AUTH_PREFIX_BEARER + bearerToken);
+        return this;
+    }
+
+    public RestClientService authenticationToken(String authenticationToken) {
+        this.authenticationHeader = new HttpAuthenticationHeader(HEADER_KEY_AUTH, authenticationToken);
+        return this;
+    }
+
+    public RestClientService authentication(String authenticationHeaderName, String authenticationToken) {
+        this.authenticationHeader = new HttpAuthenticationHeader(authenticationHeaderName, authenticationToken);
+        return this;
+    }
+
     public RestClientService requestBody(Object requestBody) {
         this.requestBody = requestBody;
         return this;
@@ -143,6 +195,36 @@ public class RestClientService {
         return this;
     }
 
+    public RestClientService connectionTimeout(int connectionTimeout) {
+        if (connectionTimeout > 0) {
+            this.connectionTimeout = connectionTimeout;
+        }
+
+        return this;
+    }
+
+    public RestClientService requestTimeout(int requestTimeout) {
+        if (requestTimeout > 0) {
+            this.requestTimeout = requestTimeout;
+        }
+
+        return this;
+    }
+
+    public RestClientService sslHostnameVerifierList(List<String> sslHostnameVerifierList) {
+        this.sslHostnameVerifierList = sslHostnameVerifierList;
+        return this;
+    }
+
+    public RestClientService requestFactoryStrategy(RequestFactoryStrategy requestFactoryStrategy) {
+
+        if (requestFactoryStrategy != null) {
+            this.requestFactoryStrategy = requestFactoryStrategy;
+        }
+
+        return this;
+    }
+
     @SuppressWarnings("unchecked")
     public <T> T exchange() {
 
@@ -158,6 +240,10 @@ public class RestClientService {
             restClientBuilder.defaultHeaders(httpHeaders -> httpHeaders.addAll(headers));
         }
 
+        if (authenticationHeader != null) {
+            restClientBuilder.defaultHeader(authenticationHeader.headerName, authenticationHeader.token);
+        }
+
         Map<String, Object> uriParameterMap = new HashMap<>();
         // resolve url parameters for no-post request
         if (queryParameters != null && !queryParameters.isEmpty()) {
@@ -171,6 +257,14 @@ public class RestClientService {
 
         restClientBuilder.defaultUriVariables(uriParameterMap);
         restClientBuilder.baseUrl(encodeUrlParameterVariableFunction.apply(url, queryParameters));
+
+        try {
+            HttpComponentsClientHttpRequestFactory requestFactory = requestFactoryStrategy.createRequestFactory(sslHostnameVerifierList);
+            requestFactory.setConnectionRequestTimeout(requestTimeout);
+            requestFactory.setConnectTimeout(connectionTimeout);
+
+            restClientBuilder.requestFactory(requestFactory);
+        } catch (NoSuchAlgorithmException | KeyStoreException | KeyManagementException e) {}
 
         RestClient restClient = restClientBuilder.build();
 
@@ -194,7 +288,7 @@ public class RestClientService {
                     requestBody != null ? mapper.writeValueAsString(requestBody) : null,
                     response.getStatusCode(),
                     response.getHeaders(),
-                    result);
+                    result.getBytes().length > MAX_BODY_SIZE ? new String(result.getBytes(), 0, MAX_BODY_SIZE).concat(OMISSIS) : result);
 
             if (response.getStatusCode().isError()) {
                 HttpStatusErrorFunction httpStatusErrorFunction;
@@ -234,6 +328,105 @@ public class RestClientService {
             this.errorResponseFunction = errorResponseFunction;
             retryDone = false;
         }
+    }
+
+    @Getter
+    @AllArgsConstructor
+    public static class HttpAuthenticationHeader {
+        private String headerName;
+        private String token;
+    }
+
+    public interface RequestFactoryStrategy {
+        HttpComponentsClientHttpRequestFactory createRequestFactory(List<String> sslHostnameVerifierList) throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException;
+    }
+
+    public enum RequestFactoryStrategyEnum implements RequestFactoryStrategy {
+        HANDSHAKE_CERT_VALIDATION {
+            @Override
+            public HttpComponentsClientHttpRequestFactory createRequestFactory(List<String> sslHostnameVerifierList) throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+                SSLContext sslContext = createSSLContext();
+
+                SSLConnectionSocketFactory sslConnectionSocketFactory = createSSLConnectionSocketFactory(sslContext, sslHostnameVerifierList);
+
+                PoolingHttpClientConnectionManager poolingHttpClientConnectionManager = PoolingHttpClientConnectionManagerBuilder.create()
+                        .setSSLSocketFactory(sslConnectionSocketFactory)
+                        .build();
+
+                CloseableHttpClient httpClient = HttpClients.custom()
+                        .setConnectionManager(poolingHttpClientConnectionManager)
+                        .build();
+
+                return new HttpComponentsClientHttpRequestFactory(httpClient);
+            }
+
+            SSLContext createSSLContext() throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+                return SSLContexts.custom()
+                        .loadTrustMaterial(null, (x509Certificates, s) -> { // Check only server certificate's validation, ignore truststore
+                            Arrays.stream(x509Certificates).forEach(x509Certificate -> {
+                                try {
+                                    x509Certificate.checkValidity();
+                                } catch (CertificateExpiredException | CertificateNotYetValidException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            });
+
+                            return true;
+                        })
+                        .build();
+            }
+
+            SSLConnectionSocketFactory createSSLConnectionSocketFactory(SSLContext sslContext, List<String> sslHostnameVerifierList) {
+                return SSLConnectionSocketFactoryBuilder.create()
+                        .setSslContext(sslContext)
+                        .setHostnameVerifier((s, sslSession) -> {
+                            if (sslHostnameVerifierList == null || sslHostnameVerifierList.isEmpty()) {
+                                return true;
+                            }
+
+                            return sslHostnameVerifierList.stream().anyMatch(s::matches);
+                        })
+                        .build();
+            }
+        },
+        KEYSTORE_VALIDATION {
+            @Override
+            public HttpComponentsClientHttpRequestFactory createRequestFactory(List<String> sslHostnameVerifierList) throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+                return new HttpComponentsClientHttpRequestFactory();
+            }
+        },
+        IGNORE_VALIDATION {
+
+            @Override
+            public HttpComponentsClientHttpRequestFactory createRequestFactory(List<String> sslHostnameVerifierList) throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+                SSLContext sslContext = createSSLContext();
+
+                SSLConnectionSocketFactory sslConnectionSocketFactory = createSSLConnectionSocketFactory(sslContext, sslHostnameVerifierList);
+
+                PoolingHttpClientConnectionManager poolingHttpClientConnectionManager = PoolingHttpClientConnectionManagerBuilder.create()
+                        .setSSLSocketFactory(sslConnectionSocketFactory)
+                        .build();
+
+                CloseableHttpClient httpClient = HttpClients.custom()
+                        .setConnectionManager(poolingHttpClientConnectionManager)
+                        .build();
+
+                return new HttpComponentsClientHttpRequestFactory(httpClient);
+            }
+
+            SSLContext createSSLContext() throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+                return SSLContexts.custom()
+                        .loadTrustMaterial(TrustAllStrategy.INSTANCE) // <- ignore ssl authentication
+                        .build();
+            }
+
+            SSLConnectionSocketFactory createSSLConnectionSocketFactory(SSLContext sslContext, List<String> sslHostnameVerifierList) {
+                return SSLConnectionSocketFactoryBuilder.create()
+                        .setSslContext(sslContext)
+                        .setHostnameVerifier((s, sslSession) -> true)
+                        .build();
+            }
+        };
     }
 
     private String getStringFromInputStream(InputStream inputStream) throws IOException {
