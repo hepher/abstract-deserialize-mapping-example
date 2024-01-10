@@ -17,6 +17,6 @@ public class RepositoryLoggingAspect extends AbstractLoggingAspect {
 
     @Around("trackingRepositoryExecution() && trackingPackagePointcut()")
     public Object aroundControllerExecution(ProceedingJoinPoint joinPoint) throws Throwable {
-        return proceed(joinPoint, "Repository");
+        return proceed(new LoggingAspectParameter(joinPoint, "Repository"));
     }
 }
