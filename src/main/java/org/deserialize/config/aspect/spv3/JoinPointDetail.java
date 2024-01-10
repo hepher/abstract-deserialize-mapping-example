@@ -1,6 +1,7 @@
 package com.enelx.bfw.framework.aspect;
 
 import com.enelx.bfw.framework.resolver.TransactionId;
+import com.enelx.bfw.framework.util.ApplicationContextUtils;
 import com.enelx.bfw.framework.util.LabelUtils;
 import lombok.Getter;
 import org.apache.commons.lang3.StringUtils;
@@ -124,7 +125,7 @@ public class JoinPointDetail {
         }
 
         if (this.transactionId == null) {
-            this.transactionId = StringUtils.defaultIfBlank(MDC.get(LabelUtils.TRANSACTION_ID), UUID.randomUUID().toString());
+            this.transactionId = StringUtils.defaultIfBlank(ApplicationContextUtils.getTransactionId(), UUID.randomUUID().toString());
         }
     }
 
