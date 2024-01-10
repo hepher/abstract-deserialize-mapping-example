@@ -6,10 +6,13 @@ import com.enelx.bfw.framework.util.LabelUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Pointcut;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
@@ -19,8 +22,8 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
+@Slf4j
 @Aspect
 @Component
 @ConditionalOnExpression("${aspect.controller.enabled:true}")
@@ -43,6 +46,8 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
     @Around("trackingControllerExecution() && trackingPackagePointcut()")
     public Object aroundControllerExecution(ProceedingJoinPoint joinPoint) throws Throwable {
 
+        LoggingAspectParameter parameter = new LoggingAspectParameter(joinPoint, "Controller");
+
         if (trackedHeaderList == null) {
             trackedHeaderList = new ArrayList<>();
         }
@@ -51,17 +56,37 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
 
         HttpServletRequest request = ((ServletRequestAttributes) Objects.requireNonNull(RequestContextHolder.getRequestAttributes())).getRequest();
 
-        Map<String, String> headerMap = Collections.list(request.getHeaderNames())
-                .stream()
-                .filter(trackedHeaderList::contains)
-                .collect(Collectors.toMap(headerName -> headerName, request::getHeader));
+        String requestTransactionId = request.getHeader(LabelUtils.TRANSACTION_ID);
+        if (StringUtils.isBlank(requestTransactionId)) {
+            requestTransactionId = request.getParameter(LabelUtils.TRANSACTION_ID);
+        }
+        parameter.setTransactionId(requestTransactionId);
+
+        Map<String, String> headerMap = new HashMap<>();
+        Map<String, String> filtredHeaderMap = new HashMap<>();
+
+        for (String headerName : Collections.list(request.getHeaderNames())) {
+            if (trackedHeaderList.contains(headerName)) {
+                filtredHeaderMap.put(headerName, request.getHeader(headerName));
+            }
+            headerMap.put(headerName, request.getHeader(headerName));
+        }
+
+        String requestUrl = request.getRequestURL() + (StringUtils.isNotBlank(request.getQueryString()) ? "?" + request.getQueryString() : "");
+
+        parameter.setDetail(new JoinPointDetail(joinPoint, parameter.getTransactionId()));
+
+        MDC.put(LabelUtils.TRANSACTION_ID, parameter.getDetail().getTransactionId());
+
+        log.info(LabelUtils.LOG_CLIENT_REQUEST, requestUrl, request.getMethod(), headerMap, mapper.writeValueAsString(parameter.getDetail().getBody()));
 
         TracedRequest tracedRequest = new TracedRequest();
+        tracedRequest.setInsertDateTime(new Date());
         tracedRequest.setPath(request.getServletPath());
         tracedRequest.setHttpMethod(request.getMethod());
-        tracedRequest.setHeader(headerMap);
+        tracedRequest.setHeader(filtredHeaderMap);
 
-        return proceed(joinPoint, "Controller", (joinPointDetail, result) -> {
+        parameter.setSuccessConsumer((joinPointDetail, result) -> {
             if (successOperationTraceEnabled) {
                 tracedRequest.setTransactionId(joinPointDetail.getTransactionId());
                 tracedRequest.setMethod(joinPointDetail.getMethod());
@@ -77,7 +102,9 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
 
                 tracedRequestService.save(tracedRequest);
             }
-        }, (joinPointDetail, bfwException) -> {
+        });
+
+        parameter.setErrorConsumer((joinPointDetail, bfwException) -> {
             tracedRequest.setTransactionId(joinPointDetail.getTransactionId());
             tracedRequest.setMethod(joinPointDetail.getMethod());
 
@@ -93,5 +120,7 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
 
             tracedRequestService.save(tracedRequest);
         });
+
+        return proceed(parameter);
     }
 }
