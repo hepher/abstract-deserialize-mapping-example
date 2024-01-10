@@ -17,6 +17,6 @@ public class ServiceLoggingAspect extends AbstractLoggingAspect {
 
     @Around("trackingServiceExecution() && trackingPackagePointcut()")
     public Object aroundServiceExecution(ProceedingJoinPoint joinPoint) throws Throwable {
-        return proceed(joinPoint, "Service");
+        return proceed(new LoggingAspectParameter(joinPoint, "Service"));
     }
 }
