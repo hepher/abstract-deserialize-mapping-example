@@ -26,23 +26,48 @@ public abstract class AbstractOperationCustomizer<A extends Annotation> implemen
 
         String parameterName = null;
         A annotation = null;
+        String bodyParameterName = null;
         for (MethodParameter methodParameter : Arrays.stream(handlerMethod.getMethodParameters()).toList()) {
             if (methodParameter.hasParameterAnnotation(klass)) {
                 parameterName = methodParameter.getParameter().getName();
                 annotation = methodParameter.getParameter().getAnnotation(klass);
             }
+
+            if (methodParameter.hasParameterAnnotation(RequestBody.class)) {
+                bodyParameterName = methodParameter.getParameter().getName();
+            }
         }
 
+        String finalParameterName = parameterName;
         if (annotation != null) {
             OperationDetail detail = annotationParseFunction.apply(annotation);
             if (detail != null) {
-                for (Parameter parameter : operation.getParameters()) {
-                    if (parameterName.equals(parameter.getName())) {
-                        parameter.setName(detail.getName());
-                        parameter.setIn(detail.getIn() != null ? detail.getIn().getValue() : null);
-                        parameter.setRequired(detail.isRequired());
-                        parameter.setDescription(StringUtils.isNotBlank(detail.getDescription()) ? detail.getDescription() : null);
-                        parameter.setExample(StringUtils.isNotBlank(detail.getExample()) ? detail.getExample() : null);
+
+                if (operation.getParameters() != null && detail.getIn() != null && !detail.getIn().getValue().equals(ParameterType.BODY.getValue())) {
+                    Parameter parameter =  operation.getParameters().stream()
+                            .filter(param -> finalParameterName.equals(param.getName()))
+                            .findFirst()
+                            .orElse(null);
+
+                    if (parameter == null) {
+                        parameter = new Parameter();
+                        operation.addParametersItem(parameter);
+                    }
+
+                    parameter.setName(detail.getName());
+                    parameter.setIn(detail.getIn() != null ? detail.getIn().getValue() : null);
+                    parameter.setRequired(detail.isRequired());
+                    parameter.setDescription(StringUtils.isNotBlank(detail.getDescription()) ? detail.getDescription() : null);
+                    parameter.setExample(StringUtils.isNotBlank(detail.getExample()) ? detail.getExample() : null);
+                }
+
+                io.swagger.v3.oas.models.parameters.RequestBody requestBody = operation.getRequestBody();
+                if (requestBody != null && bodyParameterName != null) {
+                    Schema<?> bodySchema = requestBody.getContent().get("application/json").getSchema();
+                    // the schema is replaced with schema of @RequestBody parameter to avoid scenario ("refreshToken": { "refreshToken": {...}})
+                    if (bodySchema.getProperties() != null && bodySchema.getProperties().containsKey(bodyParameterName)) {
+                        Schema<?> bodyParameterSchema = bodySchema.getProperties().get(bodyParameterName);
+                        requestBody.getContent().get("application/json").setSchema(bodyParameterSchema);
                     }
                 }
             }
