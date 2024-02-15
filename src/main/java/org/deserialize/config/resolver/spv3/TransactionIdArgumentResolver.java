@@ -15,7 +15,7 @@ import org.springframework.web.method.support.ModelAndViewContainer;
 import java.util.UUID;
 
 @Component
-public class TransactionIdArgumentResolver implements HandlerMethodArgumentResolver {
+public class TransactionIdArgumentResolver extends AbstractArgumentResolver {
 
     @Override
     public boolean supportsParameter(MethodParameter methodParameter) {
@@ -28,21 +28,12 @@ public class TransactionIdArgumentResolver implements HandlerMethodArgumentResol
         TransactionId parameterAnnotation = methodParameter.getParameterAnnotation(TransactionId.class);
 
         String transactionId = null;
-
         if (parameterAnnotation != null) {
-            if (ParameterType.HEADER.value.equals(parameterAnnotation.type().value)) {
-                if (StringUtils.isNotBlank(request.getHeader(parameterAnnotation.value()))) {
-                    transactionId = request.getHeader(parameterAnnotation.value());
-                }
-            } else {
-                if (StringUtils.isNotBlank(request.getParameter(parameterAnnotation.value()))) {
-                    transactionId = request.getParameter(parameterAnnotation.value());
-                }
-            }
+            transactionId = getValueFromRequest(request, parameterAnnotation.type(), parameterAnnotation.value());
         }
 
         if (transactionId == null) {
-            transactionId = MDC.get(LabelUtils.TRANSACTION_ID);
+            transactionId = ApplicationContextUtils.getTransactionId();
         }
 
         if (transactionId == null) {
