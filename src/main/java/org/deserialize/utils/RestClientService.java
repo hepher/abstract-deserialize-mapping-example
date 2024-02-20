@@ -47,6 +47,7 @@ public class RestClientService {
     private static final String AUTH_PREFIX_BASIC = "Basic ";
     private static final String AUTH_PREFIX_BEARER = "Bearer ";
     private static final String HEADER_KEY_AUTH = "Authorization";
+    private static final String HEADER_KEY_CONTENT_TYPE = "Content-Type";
     private static final int MAX_BODY_SIZE = 4096;
     private static final String OMISSIS = "{...}";
 
@@ -54,15 +55,18 @@ public class RestClientService {
     private String url;
     private HttpMethod method;
     private Map<String, Object> queryParameters;
-    private Map<String, String> pathParameters;
+    private Map<String, Object> pathParameters;
     private MultiValueMap<String, String> headers;
     private HttpAuthenticationHeader authenticationHeader;
     private Object requestBody;
+
+    // response success handler
     private Class<?> resultClass;
+    private BiFunction<String, HttpHeaders, ?> successResponseParser;
 
     // request error handler
-    private Map<HttpStatus, HttpStatusErrorFunction> httpStatusErrorConsumers;
-    private BiFunction<BfwException, String, BfwException> parseErrorResponseException;
+    private Map<HttpStatus, HttpStatusErrorHandler> httpStatusErrorConsumers;
+    private BiFunction<BfwException, String, BfwException> exceptionErrorResponseParser;
 
     // request config
     private Integer connectionTimeout = 55*1000;
@@ -86,8 +90,8 @@ public class RestClientService {
         return new RestClientService();
     }
 
-    public static HttpStatusErrorFunction instanceHttpStatusConsumer(BiFunction<RestClientService, String, Boolean> errorResponseFunction) {
-        return new HttpStatusErrorFunction(errorResponseFunction);
+    public static HttpStatusErrorHandler instanceHttpStatusConsumer(BiPredicate<RestClientService, String> errorResponseFunction) {
+        return new HttpStatusErrorHandler(errorResponseFunction);
     }
 
     public RestClientService url(String url) {
@@ -121,20 +125,8 @@ public class RestClientService {
         return this;
     }
 
-    public RestClientService pathParameters(Map<String, String> pathParamterMap) {
+    public RestClientService pathParameters(Map<String, Object> pathParamterMap) {
         this.pathParameters = pathParamterMap;
-        return this;
-    }
-
-    public RestClientService header(String key, String value, boolean replace) {
-        if (headers == null) {
-            headers = new LinkedMultiValueMap<>();
-        }
-        if (replace) {
-            headers.put(key, Collections.singletonList(value));
-        } else {
-            headers.computeIfAbsent(key, k -> new ArrayList<>()).add(value);
-        }
         return this;
     }
 
@@ -181,17 +173,26 @@ public class RestClientService {
         return this;
     }
 
-    public RestClientService httpStatusErrorConsumer(HttpStatus httpStatus, HttpStatusErrorFunction httpStatusErrorFunction) {
-        if (httpStatusErrorConsumers == null) {
-            httpStatusErrorConsumers = new HashMap<>();
-        }
-
-        httpStatusErrorConsumers.put(httpStatus, httpStatusErrorFunction);
+    public RestClientService successResponseParser(BiFunction<String, HttpHeaders, ?> successResponseParser) {
+        this.successResponseParser = successResponseParser;
         return this;
     }
 
-    public RestClientService parseErrorResponseException(BiFunction<BfwException, String, BfwException> parseErrorResponseException) {
-        this.parseErrorResponseException = parseErrorResponseException;
+    public RestClientService httpStatusErrorHandler(HttpStatus httpStatus, BiPredicate<RestClientService, String> httpStatusErrorFunction) {
+        if (httpStatus == null || httpStatusErrorFunction == null) {
+            return this;
+        }
+
+        if (httpStatusErrorConsumers == null) {
+            httpStatusErrorConsumers = new EnumMap<>(HttpStatus.class);
+        }
+
+        httpStatusErrorConsumers.put(httpStatus, new HttpStatusErrorHandler(httpStatusErrorFunction));
+        return this;
+    }
+
+    public RestClientService exceptionErrorResponseParser(BiFunction<BfwException, String, BfwException> exceptionErrorResponseParser) {
+        this.exceptionErrorResponseParser = exceptionErrorResponseParser;
         return this;
     }
 
@@ -235,10 +236,13 @@ public class RestClientService {
         RestClient.Builder restClientBuilder = RestClient.builder();
 
         // resolve headers
-        restClientBuilder.defaultHeader("Content-Type", "application/json");
-        if (headers != null) {
-            restClientBuilder.defaultHeaders(httpHeaders -> httpHeaders.addAll(headers));
+        if (headers == null) {
+            headers = new LinkedMultiValueMap<>();
+            headers.put(HEADER_KEY_CONTENT_TYPE, Collections.singletonList(MediaType.APPLICATION_JSON_VALUE));
         }
+
+        headers.putIfAbsent(HEADER_KEY_CONTENT_TYPE, Collections.singletonList(MediaType.APPLICATION_JSON_VALUE));
+        restClientBuilder.defaultHeaders(httpHeaders -> httpHeaders.addAll(headers));
 
         if (authenticationHeader != null) {
             restClientBuilder.defaultHeader(authenticationHeader.headerName, authenticationHeader.token);
@@ -270,7 +274,7 @@ public class RestClientService {
 
         RestClient.RequestBodyUriSpec requestSpec = restClient.method(method);
         if (requestBody != null) {
-            requestSpec.body(requestBody);
+            requestSpec.body(RequestBodyStrategy.getStrategy(headers.getFirst(HEADER_KEY_CONTENT_TYPE)).parse(requestBody));
         }
 
         StopWatch stopWatch = new StopWatch();
@@ -278,7 +282,7 @@ public class RestClientService {
         return requestSpec.exchange((request, response) -> {
             stopWatch.stop();
 
-            String result = getStringFromInputStream(response.getBody());
+            String result = StreamUtils.copyToString(response.getBody(), StandardCharsets.UTF_8);
 
             log.info(LabelUtils.LOG_ALL,
                     request.getURI(),
@@ -291,25 +295,34 @@ public class RestClientService {
                     result.getBytes().length > MAX_BODY_SIZE ? new String(result.getBytes(), 0, MAX_BODY_SIZE).concat(OMISSIS) : result);
 
             if (response.getStatusCode().isError()) {
-                HttpStatusErrorFunction httpStatusErrorFunction;
-                if (httpStatusErrorConsumers != null && (httpStatusErrorFunction = httpStatusErrorConsumers.get(HttpStatus.valueOf(response.getStatusCode().value()))) != null) {
-                    if (Boolean.FALSE.equals(httpStatusErrorFunction.retryDone) && httpStatusErrorFunction.getErrorResponseFunction().apply(this, result)) {
-                        httpStatusErrorFunction.retryDone = true;
-                        return exchange();
-                    }
-                }
+                HttpStatusErrorHandler httpStatusErrorHandler;
+				if (httpStatusErrorConsumers != null
+						&& (httpStatusErrorHandler = httpStatusErrorConsumers.get(HttpStatus.valueOf(response.getStatusCode().value()))) != null
+						&& (Boolean.FALSE.equals(httpStatusErrorHandler.retryDone) 
+						&& httpStatusErrorHandler.getErrorHandlerFunction().test(this, result))) {
+					httpStatusErrorHandler.retryDone = true;
+					return exchange();
+				}
 
                 BfwException bfwException = new BfwException();
                 bfwException.setHttpStatus(HttpStatus.valueOf(response.getStatusCode().value()));
-                bfwException.setTransactionId(MDC.get(LabelUtils.TRANSACTION_ID));
                 bfwException.setSystemErrorResponse(mapper.readValue(result, Object.class));
 
-                if (parseErrorResponseException != null) {
-                    throw parseErrorResponseException.apply(bfwException, result);
+                if (exceptionErrorResponseParser != null) {
+                    throw exceptionErrorResponseParser.apply(bfwException, result);
                 }
 
                 throw bfwException;
             } else {
+
+                if (successResponseParser != null) {
+                    return (T) successResponseParser.apply(result, response.getHeaders());
+                }
+                
+                if (StringUtils.isBlank(result)) {
+                    return null;
+                }
+
                 if (resultClass != null) {
                     return (T) mapper.readValue(result, resultClass);
                 }
@@ -320,12 +333,12 @@ public class RestClientService {
     }
 
     @Getter
-    public static class HttpStatusErrorFunction {
+    public static class HttpStatusErrorHandler {
         private Boolean retryDone;
-        private final BiFunction<RestClientService, String, Boolean> errorResponseFunction;
+        private final BiPredicate<RestClientService, String> errorHandlerFunction;
 
-        public HttpStatusErrorFunction(BiFunction<RestClientService, String, Boolean> errorResponseFunction) {
-            this.errorResponseFunction = errorResponseFunction;
+        public HttpStatusErrorHandler(BiPredicate<RestClientService, String> errorHandlerFunction) {
+            this.errorHandlerFunction = errorHandlerFunction;
             retryDone = false;
         }
     }
@@ -335,6 +348,49 @@ public class RestClientService {
     public static class HttpAuthenticationHeader {
         private String headerName;
         private String token;
+    }
+
+    @AllArgsConstructor
+    private enum RequestBodyStrategy {
+        FORM_URLENCODED(MediaType.APPLICATION_FORM_URLENCODED_VALUE) {
+            @Override
+            Object parse(Object body) {
+                if (body == null) {
+                    return null;
+                }
+
+                if (body instanceof LinkedMultiValueMap<?, ?>) {
+                    return body;
+                }
+
+                Map<String, Object> map = new ObjectMapper().convertValue(body, new TypeReference<>() {});
+
+                MultiValueMap<String, Object> result = new LinkedMultiValueMap<>();
+                result.setAll(map);
+
+                return result;
+            }
+        },
+        JSON (MediaType.APPLICATION_JSON_VALUE) {
+            @Override
+            Object parse(Object body) {
+                return body;
+            }
+        };
+
+        final String mediaType;
+
+        static RequestBodyStrategy getStrategy(String contentType) {
+            if (StringUtils.isBlank(contentType)) {
+                return JSON;
+            }
+
+            return Arrays.stream(values())
+                    .filter(requestBodyStrategy -> requestBodyStrategy.mediaType.equals(contentType))
+                    .findFirst()
+                    .orElse(JSON);
+        }
+        abstract Object parse(Object body);
     }
 
     public interface RequestFactoryStrategy {
@@ -426,15 +482,6 @@ public class RestClientService {
                         .setHostnameVerifier((s, sslSession) -> true)
                         .build();
             }
-        };
-    }
-
-    private String getStringFromInputStream(InputStream inputStream) throws IOException {
-        ByteArrayOutputStream result = new ByteArrayOutputStream();
-        byte[] buffer = new byte[1024];
-        for (int length; (length = inputStream.read(buffer)) != -1; ) {
-            result.write(buffer, 0, length);
         }
-        return result.toString(StandardCharsets.UTF_8);
     }
 }
