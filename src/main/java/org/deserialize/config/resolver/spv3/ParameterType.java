@@ -6,7 +6,7 @@ import lombok.Getter;
 @Getter
 @AllArgsConstructor
 public enum ParameterType {
-    HEADER("header"), BODY("body"), QUERY("query");
+    HEADER("header"), BODY("body"), QUERY("query"), PATH("path");
 
     final String value;
 }
