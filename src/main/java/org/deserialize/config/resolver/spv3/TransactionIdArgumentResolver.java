@@ -29,7 +29,7 @@ public class TransactionIdArgumentResolver extends AbstractArgumentResolver {
 
         String transactionId = null;
         if (parameterAnnotation != null) {
-            transactionId = getValueFromRequest(request, parameterAnnotation.type(), parameterAnnotation.value());
+            transactionId = (String) RequestParameterUtils.getValueFromRequest(request, parameterAnnotation.type(), parameterAnnotation.value());
         }
 
         if (transactionId == null) {
