@@ -17,19 +17,18 @@ import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactory;
 import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
 import org.apache.hc.client5.http.ssl.TrustAllStrategy;
 import org.apache.hc.core5.ssl.SSLContexts;
-import org.slf4j.MDC;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.util.StopWatch;
+import org.springframework.util.StreamUtils;
 import org.springframework.web.client.RestClient;
 
 import javax.net.ssl.SSLContext;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
 import java.security.KeyStoreException;
@@ -38,6 +37,7 @@ import java.security.cert.CertificateExpiredException;
 import java.security.cert.CertificateNotYetValidException;
 import java.util.*;
 import java.util.function.BiFunction;
+import java.util.function.BiPredicate;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -62,6 +62,7 @@ public class RestClientService {
 
     // response success handler
     private Class<?> resultClass;
+    private TypeReference<?> resultTypeReference;
     private BiFunction<String, HttpHeaders, ?> successResponseParser;
 
     // request error handler
@@ -130,11 +131,17 @@ public class RestClientService {
         return this;
     }
 
-    public RestClientService header(String key, List<String> values) {
+    public RestClientService header(String key, String... values) {
         if (headers == null) {
             headers = new LinkedMultiValueMap<>();
         }
-        headers.put(key, values);
+
+        if (values == null) {
+            headers.put(key, null);
+        } else {
+            headers.put(key, Arrays.stream(values).toList());
+        }
+
         return this;
     }
 
@@ -170,6 +177,11 @@ public class RestClientService {
 
     public RestClientService resultClass(Class<?> klass) {
         this.resultClass = klass;
+        return this;
+    }
+
+    public RestClientService resultTypeReference(TypeReference<?> typeReference) {
+        this.resultTypeReference = typeReference;
         return this;
     }
 
@@ -229,8 +241,8 @@ public class RestClientService {
     @SuppressWarnings("unchecked")
     public <T> T exchange() {
 
-        if (StringUtils.isBlank(url) || method == null) {
-            throw new BfwException(String.format("Missing required parameter[ url: %s, method: %s ]", url, method));
+        if (StringUtils.isBlank(url) || method == null || (resultClass == null && resultTypeReference == null && successResponseParser == null)) {
+            throw new BfwException("Missing required parameter[ url or method or result ]");
         }
 
         RestClient.Builder restClientBuilder = RestClient.builder();
@@ -307,6 +319,7 @@ public class RestClientService {
                 BfwException bfwException = new BfwException();
                 bfwException.setHttpStatus(HttpStatus.valueOf(response.getStatusCode().value()));
                 bfwException.setSystemErrorResponse(mapper.readValue(result, Object.class));
+                bfwException.setErrorCode(String.valueOf(response.getStatusCode().value()));
 
                 if (exceptionErrorResponseParser != null) {
                     throw exceptionErrorResponseParser.apply(bfwException, result);
@@ -327,7 +340,7 @@ public class RestClientService {
                     return (T) mapper.readValue(result, resultClass);
                 }
 
-                return mapper.readValue(result, new TypeReference<>() {});
+                return (T) mapper.readValue(result, resultTypeReference);
             }
         });
     }
@@ -483,5 +496,10 @@ public class RestClientService {
                         .build();
             }
         }
+    }
+
+    @Override
+    public String toString() {
+        return String.format("url='%s', method='%s'", url, method);
     }
 }
