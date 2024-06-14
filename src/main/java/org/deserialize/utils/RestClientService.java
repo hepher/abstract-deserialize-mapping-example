@@ -131,6 +131,10 @@ public class RestClientService {
         return this;
     }
 
+    public RestClientService header(String key, String value) {
+        return header(key, new String[]{value});
+    }
+
     public RestClientService header(String key, String... values) {
         if (headers == null) {
             headers = new LinkedMultiValueMap<>();
