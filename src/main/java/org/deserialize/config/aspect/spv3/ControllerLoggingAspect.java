@@ -1,6 +1,7 @@
 package com.enelx.bfw.framework.aspect;
 
 import com.enelx.bfw.framework.entity.TracedRequest;
+import com.enelx.bfw.framework.property.ApplicationProperties;
 import com.enelx.bfw.framework.service.TracedRequestService;
 import com.enelx.bfw.framework.util.LabelUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -16,8 +17,11 @@ import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StopWatch;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -26,7 +30,7 @@ import java.util.*;
 @Slf4j
 @Aspect
 @Component
-@ConditionalOnExpression("${aspect.controller.enabled:true}")
+@ConditionalOnExpression("${bfw.aspect.controller.enabled:true}")
 public class ControllerLoggingAspect extends AbstractLoggingAspect {
 
     private final static ObjectMapper mapper = new ObjectMapper();
@@ -34,11 +38,14 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
     @Autowired
     private TracedRequestService tracedRequestService;
 
-    @Value("${aspect.controller.traced-headers:null}")
+    @Autowired
+    private ApplicationProperties applicationProperties;
+
+    @Value("${bfw.aspect.controller.traced-headers:null}")
     private List<String> trackedHeaderList;
 
-    @Value("${aspect.controller.success-operation-trace.enable:false}")
-    private Boolean successOperationTraceEnabled;
+    @Value("${bfw.aspect.controller.success-operation-trace.enable:false}")
+    private boolean successOperationTraceEnabled;
 
     @Pointcut("within(@org.springframework.web.bind.annotation.RestController *)")
     public void trackingControllerExecution() {}
@@ -46,13 +53,14 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
     @Around("trackingControllerExecution() && trackingPackagePointcut()")
     public Object aroundControllerExecution(ProceedingJoinPoint joinPoint) throws Throwable {
 
+        StopWatch stopWatch = new StopWatch();
         LoggingAspectParameter parameter = new LoggingAspectParameter(joinPoint, "Controller");
 
         if (trackedHeaderList == null) {
             trackedHeaderList = new ArrayList<>();
         }
 
-        trackedHeaderList.addAll(Arrays.asList(LabelUtils.ANNOTATION_UNIQUE_ID, LabelUtils.ANNOTATION_TRANSACTION_ID, LabelUtils.HEADER_AUTHENTICATION));
+        trackedHeaderList.addAll(Arrays.asList(LabelUtils.MASHERY_UNIQUE_ID_HEADER, LabelUtils.ANNOTATION_TRANSACTION_ID, LabelUtils.HEADER_AUTHENTICATION));
 
         HttpServletRequest request = ((ServletRequestAttributes) Objects.requireNonNull(RequestContextHolder.getRequestAttributes())).getRequest();
 
@@ -76,9 +84,19 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
 
         parameter.setDetail(new JoinPointDetail(joinPoint, parameter.getTransactionId()));
 
+        MDC.clear();
         MDC.put(LabelUtils.TRANSACTION_ID, parameter.getDetail().getTransactionId());
+        MDC.put(LabelUtils.SPAN_ID, UUID.randomUUID().toString().replace("-", "").substring(0, 8));
+        MDC.put(LabelUtils.MODULE_ID, applicationProperties.getName());
+        MDC.put(LabelUtils.CONTAINER, applicationProperties.getContainer());
+        MDC.put(LabelUtils.NAMESPACE, applicationProperties.getNamespace());
+        MDC.put(LabelUtils.VERSION, applicationProperties.getVersion());
 
-        log.info(LabelUtils.LOG_CLIENT_REQUEST, requestUrl, request.getMethod(), headerMap, mapper.writeValueAsString(parameter.getDetail().getBody()));
+        log.info(LabelUtils.LOG_CLIENT_REQUEST,
+                requestUrl,
+                request.getMethod(),
+                headerMap,
+                parameter.getDetail().getBody() != null ? mapper.writeValueAsString(parameter.getDetail().getBody()) : "");
 
         TracedRequest tracedRequest = new TracedRequest();
         tracedRequest.setInsertDateTime(new Date());
@@ -95,7 +113,7 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
                     tracedRequest.setRequestBody(mapper.writeValueAsString(joinPointDetail.getSimpleParameterMap()));
                     tracedRequest.setResponseBody(mapper.writeValueAsString(result));
                 } catch (JsonProcessingException e) {
-                    throw new RuntimeException(e);
+//                    throw new RuntimeException(e);
                 }
 
                 tracedRequest.setResponseStatus(HttpStatus.OK.value());
@@ -109,9 +127,9 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
             tracedRequest.setMethod(joinPointDetail.getMethod());
 
             try {
-                tracedRequest.setRequestBody(mapper.writeValueAsString(joinPointDetail.getSimpleParameterMap()));
+                tracedRequest.setRequestBody(StringUtils.substring(mapper.writeValueAsString(joinPointDetail.getSimpleParameterMap()), 0, 255));
             } catch (JsonProcessingException e) {
-                throw new RuntimeException(e);
+//                requestBody = joinPointDetail.getSimpleParameterMap().toString();
             }
 
             tracedRequest.setResponseBody(bfwException.getSystemErrorResponse() != null ? bfwException.getSystemErrorResponse() : bfwException.getMessage());
@@ -121,6 +139,36 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
             tracedRequestService.save(tracedRequest);
         });
 
-        return proceed(parameter);
+        stopWatch.start("controller aspect");
+        Object response = proceed(parameter);
+        stopWatch.stop();
+
+        int responseStatusCode;
+        HttpHeaders responseHeaders;
+        String jsonBodyResponse;
+        if (response instanceof ResponseEntity<?> responseEntity) {
+            responseStatusCode = responseEntity.getStatusCode().value();
+            responseHeaders = responseEntity.getHeaders();
+            jsonBodyResponse = null;
+            if (responseEntity.hasBody()) {
+                jsonBodyResponse = mapper.writeValueAsString(responseEntity.getBody());
+            }
+        } else {
+            responseStatusCode = 200;
+            responseHeaders = null;
+            jsonBodyResponse = mapper.writeValueAsString(response);
+        }
+
+        log.info(LabelUtils.LOG_CLIENT_REQUEST_RESPONSE,
+                requestUrl,
+                request.getMethod(),
+                headerMap,
+                stopWatch.getTotalTimeMillis() + "ms",
+                parameter.getDetail().getBody() != null ? mapper.writeValueAsString(parameter.getDetail().getBody()) : "",
+                responseStatusCode,
+                responseHeaders != null ? responseHeaders : "",
+                jsonBodyResponse != null ? jsonBodyResponse : "");
+
+        return response;
     }
 }
