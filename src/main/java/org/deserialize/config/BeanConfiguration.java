@@ -34,4 +34,14 @@ public class BeanConfiguration {
         return txManager;
     }
 
+        @Autowired
+    public void setContext(ApplicationContext applicationcontext) {
+        ApplicationContextUtils.setApplicationContext(applicationcontext);
+    }
+
+    @Autowired
+    public void setConfigurableBeanFactory(ConfigurableBeanFactory beanFactory) {
+        ApplicationContextUtils.setConfigurableBeanFactory(beanFactory);
+    }
+
 }
