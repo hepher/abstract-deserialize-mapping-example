@@ -35,7 +35,7 @@ public abstract class AbstractLoggingAspect {
         JoinPointDetail detail = parameter.getDetail();
 
         if (detail == null) {
-            detail = new JoinPointDetail(parameter.getJoinPoint(), parameter.getTransactionId());
+            detail = new JoinPointDetail(parameter.getJoinPoint(), null);
         }
 
         StopWatch watcher = new StopWatch();
