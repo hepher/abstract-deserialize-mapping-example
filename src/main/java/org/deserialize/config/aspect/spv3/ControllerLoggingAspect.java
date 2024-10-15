@@ -1,9 +1,10 @@
-package com.enelx.bfw.framework.aspect;
+package com.enel.eic.commons.aspect;
 
-import com.enelx.bfw.framework.entity.TracedRequest;
-import com.enelx.bfw.framework.property.ApplicationProperties;
-import com.enelx.bfw.framework.service.TracedRequestService;
-import com.enelx.bfw.framework.util.LabelUtils;
+
+import com.enel.eic.commons.model.entity.TracedRequest;
+import com.enel.eic.commons.property.ApplicationProperties;
+import com.enel.eic.commons.service.TracedRequestService;
+import com.enel.eic.commons.util.LabelUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
@@ -36,15 +37,15 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
     private final static ObjectMapper mapper = new ObjectMapper();
 
     @Autowired
-    private TracedRequestService tracedRequestService;
-
-    @Autowired
     private ApplicationProperties applicationProperties;
 
-    @Value("${bfw.aspect.controller.traced-headers:null}")
+    @Autowired
+    private TracedRequestService tracedRequestService;
+
+    @Value("${commons.aspect.controller.traced-headers:null}")
     private List<String> trackedHeaderList;
 
-    @Value("${bfw.aspect.controller.success-operation-trace.enable:false}")
+    @Value("${commons.aspect.controller.success-operation-trace.enable:false}")
     private boolean successOperationTraceEnabled;
 
     @Pointcut("within(@org.springframework.web.bind.annotation.RestController *)")
@@ -53,6 +54,7 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
     @Around("trackingControllerExecution() && trackingPackagePointcut()")
     public Object aroundControllerExecution(ProceedingJoinPoint joinPoint) throws Throwable {
 
+        MDC.clear();
         StopWatch stopWatch = new StopWatch();
         LoggingAspectParameter parameter = new LoggingAspectParameter(joinPoint, "Controller");
 
@@ -68,7 +70,6 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
         if (StringUtils.isBlank(requestTransactionId)) {
             requestTransactionId = request.getParameter(LabelUtils.TRANSACTION_ID);
         }
-        parameter.setTransactionId(requestTransactionId);
 
         Map<String, String> headerMap = new HashMap<>();
         Map<String, String> filtredHeaderMap = new HashMap<>();
@@ -82,9 +83,8 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
 
         String requestUrl = request.getRequestURL() + (StringUtils.isNotBlank(request.getQueryString()) ? "?" + request.getQueryString() : "");
 
-        parameter.setDetail(new JoinPointDetail(joinPoint, parameter.getTransactionId()));
+        parameter.setDetail(new JoinPointDetail(joinPoint, requestTransactionId));
 
-        MDC.clear();
         MDC.put(LabelUtils.TRANSACTION_ID, parameter.getDetail().getTransactionId());
         MDC.put(LabelUtils.SPAN_ID, UUID.randomUUID().toString().replace("-", "").substring(0, 8));
         MDC.put(LabelUtils.MODULE_ID, applicationProperties.getName());
@@ -169,6 +169,8 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
                 responseHeaders != null ? responseHeaders : "",
                 jsonBodyResponse != null ? jsonBodyResponse : "");
 
+        MDC.clear();
+        
         return response;
     }
 }
