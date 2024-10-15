@@ -13,7 +13,6 @@ public class LoggingAspectParameter {
     private ProceedingJoinPoint joinPoint;
     private JoinPointDetail detail;
     private String klassType;
-    private String transactionId;
     private BiConsumer<JoinPointDetail, Object> successConsumer;
     private BiConsumer<JoinPointDetail, BfwException> errorConsumer;
     private AbstractLoggingAspect.LoggingKlassStrategy loggingKlassStrategy = AbstractLoggingAspect.LoggingKlassStrategy.KLASS_METHOD;
