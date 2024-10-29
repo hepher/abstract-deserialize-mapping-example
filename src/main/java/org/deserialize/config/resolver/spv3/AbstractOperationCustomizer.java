@@ -84,25 +84,18 @@ public abstract class AbstractOperationCustomizer<A extends Annotation> implemen
                 }
 
                 if (Boolean.FALSE.equals(isRemoved)) {
+                    if (bodyParameterName == null) {
+                        operation.setRequestBody(null);
+                    }
+
                     io.swagger.v3.oas.models.parameters.RequestBody requestBody = operation.getRequestBody();
                     if (requestBody != null) {
                         Schema<?> bodySchema = requestBody.getContent().get("application/json").getSchema();
 
-                        if (bodySchema.getProperties() != null) {
-                            // remove single property from body
-                            bodySchema.getProperties().remove(finalParameterName);
-
-                            // the schema is replaced with schema of @RequestBody parameter to avoid scenario ("refreshToken": { "refreshToken": {...}})
-                            if (bodySchema.getProperties().containsKey(bodyParameterName)) {
-                                Schema<?> bodyParameterSchema = bodySchema.getProperties().get(bodyParameterName);
-                                // copy properties from parent schema to inner schema to avoid last
-                                bodyParameterSchema.setProperties(bodySchema.getProperties());
-                                requestBody.getContent().get("application/json").setSchema(bodyParameterSchema);
-                            }
-
-                            if (bodySchema.getProperties().isEmpty()) {
-                                operation.setRequestBody(null);
-                            }
+                        // the schema is replaced with schema of @RequestBody parameter to avoid scenario ("refreshToken": { "refreshToken": {...}})
+                        if (bodySchema.getProperties() != null && bodySchema.getProperties().containsKey(bodyParameterName)) {
+                            Schema<?> bodyParameterSchema = bodySchema.getProperties().get(bodyParameterName);
+                            requestBody.getContent().get("application/json").setSchema(bodyParameterSchema);
                         }
                     }
                 }
