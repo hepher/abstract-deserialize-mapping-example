@@ -31,13 +31,10 @@ import java.util.*;
 @Slf4j
 @Aspect
 @Component
-@ConditionalOnExpression("${bfw.aspect.controller.enabled:true}")
+@ConditionalOnExpression("${commons.aspect.controller.enabled:true}")
 public class ControllerLoggingAspect extends AbstractLoggingAspect {
 
     private final static ObjectMapper mapper = new ObjectMapper();
-
-    @Autowired
-    private ApplicationProperties applicationProperties;
 
     @Autowired
     private TracedRequestService tracedRequestService;
@@ -54,8 +51,6 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
     @Around("trackingControllerExecution() && trackingPackagePointcut()")
     public Object aroundControllerExecution(ProceedingJoinPoint joinPoint) throws Throwable {
 
-        MDC.clear();
-        StopWatch stopWatch = new StopWatch();
         LoggingAspectParameter parameter = new LoggingAspectParameter(joinPoint, "Controller");
 
         if (trackedHeaderList == null) {
@@ -67,36 +62,16 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
         HttpServletRequest request = ((ServletRequestAttributes) Objects.requireNonNull(RequestContextHolder.getRequestAttributes())).getRequest();
 
         String requestTransactionId = request.getHeader(LabelUtils.TRANSACTION_ID);
-        if (StringUtils.isBlank(requestTransactionId)) {
-            requestTransactionId = request.getParameter(LabelUtils.TRANSACTION_ID);
-        }
 
-        Map<String, String> headerMap = new HashMap<>();
         Map<String, String> filtredHeaderMap = new HashMap<>();
 
         for (String headerName : Collections.list(request.getHeaderNames())) {
             if (trackedHeaderList.contains(headerName)) {
                 filtredHeaderMap.put(headerName, request.getHeader(headerName));
             }
-            headerMap.put(headerName, request.getHeader(headerName));
         }
 
-        String requestUrl = request.getRequestURL() + (StringUtils.isNotBlank(request.getQueryString()) ? "?" + request.getQueryString() : "");
-
         parameter.setDetail(new JoinPointDetail(joinPoint, requestTransactionId));
-
-        MDC.put(LabelUtils.TRANSACTION_ID, parameter.getDetail().getTransactionId());
-        MDC.put(LabelUtils.SPAN_ID, UUID.randomUUID().toString().replace("-", "").substring(0, 8));
-        MDC.put(LabelUtils.MODULE_ID, applicationProperties.getName());
-        MDC.put(LabelUtils.CONTAINER, applicationProperties.getContainer());
-        MDC.put(LabelUtils.NAMESPACE, applicationProperties.getNamespace());
-        MDC.put(LabelUtils.VERSION, applicationProperties.getVersion());
-
-        log.info(LabelUtils.LOG_CLIENT_REQUEST,
-                requestUrl,
-                request.getMethod(),
-                headerMap,
-                parameter.getDetail().getBody() != null ? mapper.writeValueAsString(parameter.getDetail().getBody()) : "");
 
         TracedRequest tracedRequest = new TracedRequest();
         tracedRequest.setInsertDateTime(new Date());
@@ -139,38 +114,6 @@ public class ControllerLoggingAspect extends AbstractLoggingAspect {
             tracedRequestService.save(tracedRequest);
         });
 
-        stopWatch.start("controller aspect");
-        Object response = proceed(parameter);
-        stopWatch.stop();
-
-        int responseStatusCode;
-        HttpHeaders responseHeaders;
-        String jsonBodyResponse;
-        if (response instanceof ResponseEntity<?> responseEntity) {
-            responseStatusCode = responseEntity.getStatusCode().value();
-            responseHeaders = responseEntity.getHeaders();
-            jsonBodyResponse = null;
-            if (responseEntity.hasBody()) {
-                jsonBodyResponse = mapper.writeValueAsString(responseEntity.getBody());
-            }
-        } else {
-            responseStatusCode = 200;
-            responseHeaders = null;
-            jsonBodyResponse = mapper.writeValueAsString(response);
-        }
-
-        log.info(LabelUtils.LOG_CLIENT_REQUEST_RESPONSE,
-                requestUrl,
-                request.getMethod(),
-                headerMap,
-                stopWatch.getTotalTimeMillis() + "ms",
-                parameter.getDetail().getBody() != null ? mapper.writeValueAsString(parameter.getDetail().getBody()) : "",
-                responseStatusCode,
-                responseHeaders != null ? responseHeaders : "",
-                jsonBodyResponse != null ? jsonBodyResponse : "");
-
-        MDC.clear();
-        
-        return response;
+        return proceed(parameter);
     }
 }
