@@ -52,6 +52,18 @@ public class RestClientService {
     private static final int MAX_BODY_SIZE = 4096;
     private static final String OMISSIS = "{...}";
 
+    private static final Map<Class<?>, Function<String, ?>> WRAPPER_TYPE_EVAL_MAP = Map.of(
+            Integer.class, Integer::valueOf,
+            Byte.class, (resultAsString) -> resultAsString.getBytes(StandardCharsets.UTF_8),
+            Character.class, (resultAsString) -> resultAsString.charAt(0),
+            Boolean.class, Boolean::valueOf,
+            Double.class, Double::valueOf,
+            Float.class, Float::valueOf,
+            Long.class, Long::valueOf,
+            Short.class, Long::valueOf,
+            String.class, (resultAsString) -> resultAsString
+    );
+
     // request composition fields
     private String url;
     private HttpMethod method;
@@ -353,12 +365,12 @@ public class RestClientService {
                     return null;
                 };
 
-				if (httpStatusErrorConsumers != null && (httpStatusErrorHandler = httpStatusErrorConsumers.get(HttpStatus.valueOf(response.getStatusCode().value()))) != null) {
+		if (httpStatusErrorConsumers != null && (httpStatusErrorHandler = httpStatusErrorConsumers.get(HttpStatus.valueOf(response.getStatusCode().value()))) != null) {
                     var handlerResult = evalHttpStatusErrorFunction.apply(httpStatusErrorHandler);
                     if (handlerResult != null) {
                         return handlerResult;
                     }
-				}
+		}
 
                 if (clientErrorHandler != null
                         &&response.getStatusCode().is4xxClientError()
@@ -399,6 +411,10 @@ public class RestClientService {
                 }
 
                 if (resultClass != null) {
+                    if (WRAPPER_TYPE_EVAL_MAP.containsKey(resultClass)) {
+                        return (T) WRAPPER_TYPE_EVAL_MAP.get(resultClass).apply(result);
+                    }
+
                     return (T) mapper.readValue(result, resultClass);
                 }
 
