@@ -329,7 +329,7 @@ public class RestClientService {
                     requestBody != null ? mapper.writeValueAsString(requestBody) : null,
                     response.getStatusCode(),
                     response.getHeaders(),
-                    result.getBytes().length > MAX_BODY_SIZE ? new String(result.getBytes(), 0, MAX_BODY_SIZE).concat(OMISSIS) : result);
+                    result.getBytes().length > MAX_BODY_SIZE ? ApplicationContextUtils.replaceContextLineSeparator(new String(result.getBytes(), 0, MAX_BODY_SIZE).concat(OMISSIS)) : ApplicationContextUtils.replaceContextLineSeparator(result));
 
             if (response.getStatusCode().isError()) {
                 HttpStatusErrorHandler httpStatusErrorHandler = null;
