@@ -68,6 +68,14 @@ public class ApplicationContextUtils {
                 .collect(Collectors.joining(LabelUtils.AWS_CLOUD_WATCH_LINE_SEPARATOR));
     }
 
+    public static String replaceContextLineSeparator(String input) {
+        if (input == null) {
+            return null;
+        }
+
+        return input.replace("\n", LabelUtils.AWS_CLOUD_WATCH_LINE_SEPARATOR);
+    }
+
     public static String getReleaseVersion() {
         try {
             JsonNode node = mapper.readValue(ResourceUtils.getFile("./automation_conf.json"), JsonNode.class);
