@@ -72,7 +72,7 @@ public class RequestFilter extends OncePerRequestFilter {
                 requestUrl,
                 cachedBodyHttpServletRequest.getMethod(),
                 requestHeaderMap,
-                !requestBodyAsString.isBlank() ? requestBodyAsString : "");
+                !requestBodyAsString.isBlank() ? ApplicationContextUtils.replaceContextLineSeparator(requestBodyAsString) : "");
 
         StopWatch stopWatch = new StopWatch();
         stopWatch.start("Request Filter - doFilter method");
@@ -96,9 +96,9 @@ public class RequestFilter extends OncePerRequestFilter {
                 cachedBodyHttpServletRequest.getMethod(),
                 requestHeaderMap,
                 stopWatch.getTotalTimeMillis() + "ms",
-                !requestBodyAsString.isBlank() ? requestBodyAsString : "",
+                !requestBodyAsString.isBlank() ? ApplicationContextUtils.replaceContextLineSeparator(requestBodyAsString) : "",
                 httpServletResponse.getStatus(),
                 responseHeaderMap,
-                !responseBodyAsString.isBlank() ? responseBodyAsString : "");
+                !responseBodyAsString.isBlank() ? ApplicationContextUtils.replaceContextLineSeparator(responseBodyAsString) : "");
     }
 }
