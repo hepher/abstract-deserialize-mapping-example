@@ -1,9 +1,10 @@
-package com.enelx.bfw.framework.aspect;
+package com.enel.eic.commons.aspect;
 
-import com.enelx.bfw.framework.exception.BfwException;
-import com.enelx.bfw.framework.util.LabelUtils;
+
+import com.enel.eic.commons.exception.CommonsException;
+import com.enel.eic.commons.util.ApplicationContextUtils;
+import com.enel.eic.commons.util.LabelUtils;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.aspectj.lang.annotation.Pointcut;
 import org.springframework.util.StopWatch;
 
@@ -27,7 +28,7 @@ public abstract class AbstractLoggingAspect {
         public abstract String getKlass(JoinPointDetail joinPointDetail);
     }
 
-    @Pointcut("execution(* com.enelx..*.* (..))")
+    @Pointcut("execution(* com.enel..*.* (..))")
     protected void trackingPackagePointcut() {}
 
     protected Object proceed(LoggingAspectParameter parameter) throws Throwable {
@@ -48,18 +49,17 @@ public abstract class AbstractLoggingAspect {
                 parameter.getSuccessConsumer().accept(detail, result);
             }
             return result;
-        } catch (BfwException e) {
-            log.error(LabelUtils.EXIT_ERROR_LOG_HEADER_ERROR,  parameter.getKlassType(), parameter.getLoggingKlassStrategy().getKlass(detail), detail.getMethod(), e.getLocalizedMessage());
+        } catch (CommonsException e) {
+            log.error(LabelUtils.EXIT_ERROR_LOG_HEADER_ERROR,  parameter.getKlassType(), parameter.getLoggingKlassStrategy().getKlass(detail), detail.getMethod(), ApplicationContextUtils.getExceptionMessage(e), ApplicationContextUtils.getExceptionStackTrace(e));
 
             if (parameter.getErrorConsumer() != null) {
                 parameter.getErrorConsumer().accept(detail, e);
             }
             throw e;
         } catch (Throwable e) {
-            log.error(LabelUtils.EXIT_ERROR_LOG_HEADER_ERROR, parameter.getKlassType(), parameter.getLoggingKlassStrategy().getKlass(detail), detail.getMethod(), e.getLocalizedMessage());
-            log.error(ExceptionUtils.getStackTrace(e));
+            log.error(LabelUtils.EXIT_ERROR_LOG_HEADER_ERROR, parameter.getKlassType(), parameter.getLoggingKlassStrategy().getKlass(detail), detail.getMethod(), ApplicationContextUtils.getExceptionMessage(e), ApplicationContextUtils.getExceptionStackTrace(e));
 
-            BfwException bfwException = new BfwException(e.getLocalizedMessage(), detail.getTransactionId());
+            CommonsException bfwException = new CommonsException(e.getLocalizedMessage(), detail.getTransactionId());
             if (parameter.getErrorConsumer() != null) {
                 parameter.getErrorConsumer().accept(detail, bfwException);
             }
