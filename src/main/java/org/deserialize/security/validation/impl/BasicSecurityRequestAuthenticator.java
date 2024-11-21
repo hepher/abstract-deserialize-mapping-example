@@ -1,4 +1,3 @@
-
 package com.enel.eic.commons.security.validation.impl;
 
 import com.enel.eic.commons.constant.HeaderConstants;
