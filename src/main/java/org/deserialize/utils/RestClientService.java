@@ -204,7 +204,7 @@ public class RestClientService {
         return this;
     }
 
-    public RestClientService successResponseParser(BiFunction<String, HttpHeaders, ?> successResponseParser) {
+    public RestClientService onSuccessResponse(BiFunction<String, HttpHeaders, ?> successResponseParser) {
         this.successResponseParser = successResponseParser;
         return this;
     }
