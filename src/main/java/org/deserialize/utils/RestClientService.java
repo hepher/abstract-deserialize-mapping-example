@@ -90,14 +90,6 @@ public class RestClientService {
     private List<String> sslHostnameVerifierList;
     private RequestFactoryStrategy requestFactoryStrategy;
 
-    private final BiFunction<String, Map<String, Object>, String> encodeUrlParameterVariableFunction = (url, urlParameterMap) -> {
-        StringBuilder builder = new StringBuilder(url);
-        if (urlParameterMap != null && !urlParameterMap.isEmpty()) {
-            builder.append("?").append(urlParameterMap.keySet().stream().map(key -> key + "=" + "{" + key + "}").collect(Collectors.joining("&")));
-        }
-        return builder.toString();
-    };
-
     private RestClientService() {
         requestFactoryStrategy = RequestFactoryStrategyEnum.HANDSHAKE_CERT_VALIDATION;
     }
@@ -129,7 +121,10 @@ public class RestClientService {
     }
 
     public RestClientService queryParameters(Map<String, Object> queryParameterMap) {
-        this.queryParameters = queryParameterMap;
+        if (queryParameters == null) {
+            queryParameters = new HashMap<>();
+        }
+        this.queryParameters.putAll(queryParameterMap);
         return this;
     }
 
@@ -297,10 +292,50 @@ public class RestClientService {
             restClientBuilder.defaultHeader(authenticationHeader.headerName, authenticationHeader.token);
         }
 
+	StringBuilder builder = new StringBuilder(url);
         Map<String, Object> uriParameterMap = new HashMap<>();
+        // resolve url parameters
         // resolve url parameters for no-post request
         if (queryParameters != null && !queryParameters.isEmpty()) {
-            uriParameterMap.putAll(queryParameters);
+            builder.append("?");
+            int keySetIndex = 0;
+            for (String key : queryParameters.keySet()) {
+                if (queryParameters.get(key).getClass().isArray()) {
+                    var array = (Object[]) queryParameters.get(key);
+                    for (int i = 0; i < array.length; i++) {
+                        // prepare uri map parameter
+                        uriParameterMap.put(key + i, array[i]);
+
+                        // append query list parameter
+                        builder.append(key).append("=").append("{").append(key).append(i).append("}");
+                        if (i < array.length-1) {
+                            builder.append("&");
+                        }
+                    }
+                } if (queryParameters.get(key) instanceof Collection) {
+                    var list = (Collection<Object>) queryParameters.get(key);
+                    int i = 0;
+                    for (Object value : list) {
+                        // prepare uri map parameter
+                        uriParameterMap.put(key + i, value);
+
+                        // append query list parameter
+                        builder.append(key).append("=").append("{").append(key).append(i).append("}");
+                        if (i < list.size()-1) {
+                            builder.append("&");
+                        }
+                        i++;
+                    }
+                } else {
+                    builder.append(key).append("=").append("{").append(key).append("}");
+                    uriParameterMap.put(key, queryParameters.get(key));
+                }
+
+                if (keySetIndex < queryParameters.keySet().size()-1) {
+                    builder.append("&");
+                }
+                keySetIndex++;
+            }
         }
 
         // replace url parameter
@@ -309,7 +344,7 @@ public class RestClientService {
         }
 
         restClientBuilder.defaultUriVariables(uriParameterMap);
-        restClientBuilder.baseUrl(encodeUrlParameterVariableFunction.apply(url, queryParameters));
+        restClientBuilder.baseUrl(builder.toString());
 
         try {
             HttpComponentsClientHttpRequestFactory requestFactory = requestFactoryStrategy.createRequestFactory(sslHostnameVerifierList);
